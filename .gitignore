@@ -1,0 +1,25 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Go
+vendor/
+bin/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
