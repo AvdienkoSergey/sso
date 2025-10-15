@@ -6,7 +6,12 @@ on:
       - main
       - test
       - dev
-      - 'feature/**'
+      - 'feature/**'          # для новых функций
+      - 'fix/**'              # для багфиксов (как ваш fix/linter-update)
+      - 'hotfix/**'           # для срочных исправлений
+      - 'chore/**'            # для технических задач
+      - 'release-please--**'  # для release-please
+
   pull_request:
     branches:
       - main
