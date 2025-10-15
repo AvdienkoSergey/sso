@@ -1,4 +1,5 @@
 .PHONY: help generate clean install-tools pr-view release-view repo-view check-gh check-protoc check-deps
+.PHONY: test lint fmt vet build ci-local pre-commit
 
 # Определяем GitHub username и repo из git remote
 GITHUB_USER := $(shell git remote get-url origin | sed -n 's/.*github.com[:/]\(.*\)\/.*\.git/\1/p' || echo "")
@@ -19,6 +20,17 @@ ifeq ($(findstring MSYS,$(UNAME_S)),MSYS)
 	OS := windows
 endif
 
+# Цвета для вывода
+RED := \033[0;31m
+GREEN := \033[0;32m
+YELLOW := \033[0;33m
+BLUE := \033[0;34m
+NC := \033[0m # No Color
+
+# Версии инструментов
+GOLANGCI_LINT_VERSION := v1.64.0
+MOCKGEN_VERSION := latest
+
 help:
 	@echo "Доступные команды:"
 	@echo ""
@@ -36,6 +48,20 @@ help:
 	@echo "Примечание: для GitHub команд желательно установить GitHub CLI:"
 	@echo "  brew install gh     (macOS)"
 	@echo "  Или используйте: make <команда> без gh"
+
+install-tools:
+	@echo "$(BLUE)Установка инструментов разработки...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)1. golangci-lint (линтер)$(NC)"
+	@which golangci-lint > /dev/null 2>&1 || \
+		(curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell go env GOPATH)/bin $(GOLANGCI_LINT_VERSION))
+	@echo "$(GREEN)golangci-lint установлен$(NC)"
+	@echo ""
+	@echo "$(YELLOW)2. mockgen (моки для тестов)$(NC)"
+	@go install go.uber.org/mock/mockgen@$(MOCKGEN_VERSION)
+	@echo "$(GREEN)mockgen установлен$(NC)"
+	@echo ""
+	@echo "$(GREEN)Все инструменты установлены!$(NC)"
 
 # Проверка всех зависимостей
 check-deps:
@@ -72,6 +98,41 @@ check-deps:
 	fi
 	@echo ""
 	@echo "Проверка завершена!"
+
+fmt:
+	@echo "$(BLUE)Форматирование кода...$(NC)"
+	@go fmt ./...
+	@gofmt -s -w .
+	@echo "$(GREEN) Форматирование завершено$(NC)"
+
+lint:
+	@echo "$(BLUE)Запуск линтера...$(NC)"
+	@if which golangci-lint > /dev/null 2>&1; then \
+		golangci-lint run ./...; \
+		echo "$(GREEN) Линтер завершен$(NC)"; \
+	else \
+		echo "$(RED) golangci-lint не установлен!$(NC)"; \
+		echo "$(YELLOW)Запустите: make install-tools$(NC)"; \
+		exit 1; \
+	fi
+
+vet:
+	@echo "$(BLUE)Статический анализ (go vet)...$(NC)"
+	@go vet ./...
+	@echo "$(GREEN) Анализ завершен$(NC)"
+
+build:
+	@echo "$(BLUE)Сборка проекта...$(NC)"
+	@go build -v ./...
+	@echo "$(GREEN) Сборка завершена$(NC)"
+
+pre-commit: fmt vet lint test
+	@echo ""
+	@echo "$(GREEN)═══════════════════════════════════════════════════════════$(NC)"
+	@echo "$(GREEN) Все проверки пройдены! Можно делать commit.$(NC)"
+	@echo "$(GREEN)═══════════════════════════════════════════════════════════$(NC)"
+
+
 
 # Проверка наличия gh CLI
 check-gh:
