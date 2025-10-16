@@ -3,29 +3,32 @@ name: CI Pipeline
 on:
   push:
     branches:
-      - main
-      - test
-      - dev
-      - 'feature/**'          # для новых функций
-      - 'fix/**'              # для багфиксов (как ваш fix/linter-update)
-      - 'hotfix/**'           # для срочных исправлений
-      - 'chore/**'            # для технических задач
-      - 'release-please--**'  # для release-please
+      - 'feature/**'          # новая функциональность
+      - 'fix/**'              # багфиксы
+      - 'hotfix/**'           # срочные исправления
+      - 'chore/**'            # технические задачи
+      - 'release-please--**'  # автоматические релизы
 
   pull_request:
     branches:
-      - main
-      - test
-      - dev
+      - main                  # full pipeline: quick + unit + integration + e2e + security
+      - test                  # quick + unit + integration
+      - dev                   # quick + unit
 
 env:
   GO_VERSION: '1.25'
 
 jobs:
-  # Проверка кода
-  lint:
-    name: Lint Code
+  # ==========================================
+  # QUICK CHECKS - для всех push и PR
+  # ==========================================
+  quick-checks:
+    name: Quick Checks (Lint & Format)
     runs-on: ubuntu-latest
+    # Для release-please пропускаем даже quick checks
+    if: |
+      !contains(github.head_ref, 'release-please--') &&
+      !contains(github.ref, 'release-please--')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -42,19 +45,6 @@ jobs:
       - name: Run golangci-lint
         run: $(go env GOPATH)/bin/golangci-lint run --timeout=5m
 
-  # Форматирование
-  format:
-    name: Check Formatting
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
       - name: Check formatting
         run: |
           if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
@@ -62,11 +52,23 @@ jobs:
             gofmt -s -l .
             exit 1
           fi
+          echo "Code formatting is correct"
 
-  # Юнит-тесты
-  test-unit:
+  # ==========================================
+  # UNIT TESTS - для PR в dev, test, main
+  # ==========================================
+  unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      !contains(github.head_ref, 'release-please--') &&
+      (
+        github.base_ref == 'dev' ||
+        github.base_ref == 'test' ||
+        github.base_ref == 'main'
+      )
+    needs: [quick-checks]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -88,12 +90,74 @@ jobs:
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: false
+  # ==========================================
+  # BUILD - для PR в dev, test, main
+  # ==========================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      !contains(github.head_ref, 'release-please--') &&
+      (
+        github.base_ref == 'dev' ||
+        github.base_ref == 'test' ||
+        github.base_ref == 'main'
+      )
+    needs: [quick-checks]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  # Интеграционные тесты (только для test, main)
-  test-integration:
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build application
+        run: |
+          go build -v -o ./bin/sso ./cmd/sso
+          echo "Build successful"
+
+  # ==========================================
+  # INTEGRATION TESTS - для PR в test и main
+  # ==========================================
+  integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/test' || github.ref == 'refs/heads/main'
+    if: |
+      github.event_name == 'pull_request' &&
+      !contains(github.head_ref, 'release-please--') &&
+      (
+        github.base_ref == 'dev' ||
+        github.base_ref == 'test' ||
+        github.base_ref == 'main'
+      )
+    needs: [quick-checks, unit-tests]
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sso_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -105,14 +169,46 @@ jobs:
           cache: true
 
       - name: Run integration tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/sso_test?sslmode=disable
+          REDIS_URL: redis://localhost:6379
         run: |
-          go test -v -run Integration ./...
+          go test -v -run Integration ./tests/integration/...
 
-  # Сборка
-  build:
-    name: Build
+  # ==========================================
+  # E2E TESTS - только для PR в main
+  # ==========================================
+  e2e-tests:
+    name: E2E Tests
     runs-on: ubuntu-latest
-    needs: [lint, format, test-unit]
+    if: |
+      github.event_name == 'pull_request' &&
+      !contains(github.head_ref, 'release-please--') &&
+      github.base_ref == 'main'
+    needs: [quick-checks, unit-tests, integration-tests]
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sso_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -123,14 +219,25 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Build
+      - name: Run e2e tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/sso_e2e?sslmode=disable
+          REDIS_URL: redis://localhost:6379
+          APP_PORT: 8080
         run: |
-          go build -v ./...
+          go test -v -run E2E ./tests/e2e/...
 
-  # Проверка зависимостей
+  # ==========================================
+  # SECURITY - только для PR в main
+  # ==========================================
   security:
     name: Security Check
     runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      !contains(github.head_ref, 'release-please--') &&
+      github.base_ref == 'main'
+    needs: [quick-checks]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -150,21 +257,122 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
-  # Итоговая проверка
-  ci-success:
-    name: CI Success
+  # ==========================================
+  # RELEASE PLEASE VALIDATION - минимальная проверка для release-please
+  # ==========================================
+  release-please-validation:
+    name: Release Please Validation
     runs-on: ubuntu-latest
-    needs: [lint, format, test-unit, build, security]
-    if: always()
+    if: |
+      github.event_name == 'pull_request' &&
+      contains(github.head_ref, 'release-please--') &&
+      github.base_ref == 'main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate changelog
+        run: |
+          if [ ! -f "CHANGELOG.md" ]; then
+            echo "CHANGELOG.md not found"
+            exit 1
+          fi
+          echo "CHANGELOG.md exists"
+
+      - name: Validate version files
+        run: |
+          # Проверить, что версии обновлены
+          if grep -q "## \[" CHANGELOG.md; then
+            echo "Version entry found in CHANGELOG"
+          else
+            echo "No version entry in CHANGELOG"
+            exit 1
+          fi
+  # ==========================================
+  # CI SUCCESS для PR в dev
+  # ==========================================
+  ci-success-dev:
+    name: CI Success (Dev)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      github.base_ref == 'dev' &&
+      !contains(github.head_ref, 'release-please--')
+    needs: [quick-checks, unit-tests, build]
     steps:
       - name: Check CI status
         run: |
-          if [ "${{ needs.lint.result }}" != "success" ] || \
-             [ "${{ needs.format.result }}" != "success" ] || \
-             [ "${{ needs.test-unit.result }}" != "success" ] || \
-             [ "${{ needs.build.result }}" != "success" ] || \
-             [ "${{ needs.security.result }}" != "success" ]; then
-            echo "CI failed!"
+          if [ "${{ needs.quick-checks.result }}" != "success" ] || \
+             [ "${{ needs.unit-tests.result }}" != "success" ] || \
+             [ "${{ needs.build.result }}" != "success" ]; then
+            echo "CI failed for dev!"
             exit 1
           fi
-          echo "CI passed successfully!"
+          echo "CI passed for dev! Ready to merge."
+
+  # ==========================================
+  # CI SUCCESS для PR в test
+  # ==========================================
+  ci-success-test:
+    name: CI Success (Test)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      github.base_ref == 'test' &&
+      !contains(github.head_ref, 'release-please--')
+    needs: [quick-checks, unit-tests, integration-tests, build]
+    steps:
+      - name: Check CI status
+        run: |
+          if [ "${{ needs.quick-checks.result }}" != "success" ] || \
+             [ "${{ needs.unit-tests.result }}" != "success" ] || \
+             [ "${{ needs.integration-tests.result }}" != "success" ] || \
+             [ "${{ needs.build.result }}" != "success" ]; then
+            echo "CI failed for test!"
+            exit 1
+          fi
+          echo "CI passed for test! Ready to merge."
+
+  # ==========================================
+  # CI SUCCESS для PR в main
+  # ==========================================
+  ci-success-main:
+    name: CI Success (Main)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      github.base_ref == 'main' &&
+      !contains(github.head_ref, 'release-please--')
+    needs: [quick-checks, unit-tests, integration-tests, e2e-tests, build, security]
+    steps:
+      - name: Check CI status
+        run: |
+          if [ "${{ needs.quick-checks.result }}" != "success" ] || \
+             [ "${{ needs.unit-tests.result }}" != "success" ] || \
+             [ "${{ needs.integration-tests.result }}" != "success" ] || \
+             [ "${{ needs.e2e-tests.result }}" != "success" ] || \
+             [ "${{ needs.build.result }}" != "success" ] || \
+             [ "${{ needs.security.result }}" != "success" ]; then
+            echo "CI failed for main!"
+            exit 1
+          fi
+          echo "CI passed for main! Ready for production."
+  # ==========================================
+  # CI SUCCESS для release-please PR
+  # ==========================================
+  ci-success-release-please:
+    name: CI Success (Release Please)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      contains(github.head_ref, 'release-please--') &&
+      github.base_ref == 'main'
+    needs: [release-please-validation]
+    steps:
+      - name: Check CI status
+        run: |
+          if [ "${{ needs.release-please-validation.result }}" != "success" ]; then
+            echo "Release Please validation failed!"
+            exit 1
+          fi
+          echo "Release Please PR validated! Ready to merge and create release."
