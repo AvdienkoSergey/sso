@@ -20,6 +20,133 @@ env:
 
 jobs:
   # ==========================================
+  # VALIDATE SOURCE BRANCH - проверка откуда идёт PR
+  # ==========================================
+  validate-source-branch:
+    name: Validate Source Branch
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check source branch for dev
+        if: github.base_ref == 'dev'
+        run: |
+          SOURCE_BRANCH="${{ github.head_ref }}"
+          echo "Checking PR from '$SOURCE_BRANCH' to 'dev'"
+          
+          # Разрешённые паттерны для dev
+          ALLOWED_PATTERNS=(
+            "^feature/.+"
+            "^fix/.+"
+            "^hotfix/.+"
+            "^chore/.+"
+          )
+          
+          # Проверка соответствия
+          VALID=false
+          for pattern in "${ALLOWED_PATTERNS[@]}"; do
+            if echo "$SOURCE_BRANCH" | grep -Eq "$pattern"; then
+              VALID=true
+              MATCHED_PATTERN="$pattern"
+              break
+            fi
+          done
+          
+          if [ "$VALID" = false ]; then
+            echo "ERROR: Cannot create PR to 'dev' from branch '$SOURCE_BRANCH'"
+            echo ""
+            echo "Allowed source branches for 'dev':"
+            echo "  feature/*   (new features)"
+            echo "  fix/*       (bug fixes)"
+            echo "  hotfix/*    (urgent fixes)"
+            echo "  chore/*     (technical tasks)"
+            echo ""
+            echo "Examples of valid branches:"
+            echo "  feature/add-user-auth → dev"
+            echo "  fix/login-bug → dev"
+            echo "  hotfix/security-patch → dev"
+            echo "  chore/update-deps → dev"
+            echo ""
+            echo "Current branch '$SOURCE_BRANCH' does not match any allowed pattern."
+            exit 1
+          fi
+          
+          echo "Source branch '$SOURCE_BRANCH' is valid for PR to dev (matched: $MATCHED_PATTERN)"
+
+      - name: Check source branch for test
+        if: github.base_ref == 'test'
+        run: |
+          SOURCE_BRANCH="${{ github.head_ref }}"
+          echo "Checking PR from '$SOURCE_BRANCH' to 'test'"
+          
+          # Разрешённые паттерны для test
+          ALLOWED_PATTERNS=(
+            "^dev$"
+          )
+          
+          # Проверка соответствия
+          VALID=false
+          for pattern in "${ALLOWED_PATTERNS[@]}"; do
+            if echo "$SOURCE_BRANCH" | grep -Eq "$pattern"; then
+              VALID=true
+              break
+            fi
+          done
+          
+          if [ "$VALID" = false ]; then
+            echo "ERROR: Cannot create PR to 'test' from branch '$SOURCE_BRANCH'"
+            echo ""
+            echo "Allowed source branches for 'test':"
+            echo "  dev only"
+            echo ""
+            echo "Workflow:"
+            echo "  feature/* → dev → test → main"
+            echo ""
+            echo "Current branch: $SOURCE_BRANCH"
+            echo "You can only merge 'dev' into 'test'"
+            exit 1
+          fi
+          
+          echo "Source branch 'dev' is valid for PR to test"
+
+      - name: Check source branch for main
+        if: github.base_ref == 'main'
+        run: |
+          SOURCE_BRANCH="${{ github.head_ref }}"
+          echo "Checking PR from '$SOURCE_BRANCH' to 'main'"
+          
+          # Разрешённые паттерны для main
+          ALLOWED_PATTERNS=(
+            "^test$"
+            "^release-please--"
+          )
+          
+          # Проверка соответствия
+          VALID=false
+          for pattern in "${ALLOWED_PATTERNS[@]}"; do
+            if echo "$SOURCE_BRANCH" | grep -Eq "$pattern"; then
+              VALID=true
+              MATCHED_PATTERN="$pattern"
+              break
+            fi
+          done
+          
+          if [ "$VALID" = false ]; then
+            echo "ERROR: Cannot create PR to 'main' from branch '$SOURCE_BRANCH'"
+            echo ""
+            echo "Allowed source branches for 'main':"
+            echo "  test (only)"
+            echo "  release-please--* (automatic releases)"
+            echo ""
+            echo "Workflow:"
+            echo "  feature/* → dev → test → main"
+            echo ""
+            echo "Current branch: $SOURCE_BRANCH"
+            echo "You can only merge 'test' into 'main'"
+            exit 1
+          fi
+          
+          echo "Source branch '$SOURCE_BRANCH' is valid for PR to main (matched: $MATCHED_PATTERN)"
+  # ==========================================
   # QUICK CHECKS - для всех push и PR
   # ==========================================
   quick-checks:
@@ -81,7 +208,12 @@ jobs:
 
       - name: Run unit tests
         run: |
-          go test -v -short -race -coverprofile=coverage.out -covermode=atomic ./...
+          if go list ./... | grep -q .; then
+            go test -v -short -race -coverprofile=coverage.out -covermode=atomic ./...
+          else
+            echo "No tests found yet, checking compilation..."
+            go build -v .
+          fi
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -299,11 +431,12 @@ jobs:
       github.event_name == 'pull_request' &&
       github.base_ref == 'dev' &&
       !contains(github.head_ref, 'release-please--')
-    needs: [quick-checks, unit-tests, build]
+    needs: [validate-source-branch, quick-checks, unit-tests, build]
     steps:
       - name: Check CI status
         run: |
-          if [ "${{ needs.quick-checks.result }}" != "success" ] || \
+          if [ "${{ needs.validate-source-branch.result }}" != "success" ] || \
+             [ "${{ needs.quick-checks.result }}" != "success" ] || \
              [ "${{ needs.unit-tests.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ]; then
             echo "CI failed for dev!"
@@ -321,11 +454,12 @@ jobs:
       github.event_name == 'pull_request' &&
       github.base_ref == 'test' &&
       !contains(github.head_ref, 'release-please--')
-    needs: [quick-checks, unit-tests, integration-tests, build]
+    needs: [validate-source-branch, quick-checks, unit-tests, integration-tests, build]
     steps:
       - name: Check CI status
         run: |
-          if [ "${{ needs.quick-checks.result }}" != "success" ] || \
+          if [ "${{ needs.validate-source-branch.result }}" != "success" ] || \
+             [ "${{ needs.quick-checks.result }}" != "success" ] || \
              [ "${{ needs.unit-tests.result }}" != "success" ] || \
              [ "${{ needs.integration-tests.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ]; then
@@ -344,11 +478,12 @@ jobs:
       github.event_name == 'pull_request' &&
       github.base_ref == 'main' &&
       !contains(github.head_ref, 'release-please--')
-    needs: [quick-checks, unit-tests, integration-tests, e2e-tests, build, security]
+    needs: [validate-source-branch, quick-checks, unit-tests, integration-tests, e2e-tests, build, security]
     steps:
       - name: Check CI status
         run: |
-          if [ "${{ needs.quick-checks.result }}" != "success" ] || \
+          if [ "${{ needs.validate-source-branch.result }}" != "success" ] || \
+             [ "${{ needs.quick-checks.result }}" != "success" ] || \
              [ "${{ needs.unit-tests.result }}" != "success" ] || \
              [ "${{ needs.integration-tests.result }}" != "success" ] || \
              [ "${{ needs.e2e-tests.result }}" != "success" ] || \
