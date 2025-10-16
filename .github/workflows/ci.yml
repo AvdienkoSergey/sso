@@ -117,8 +117,10 @@ jobs:
 
       - name: Build application
         run: |
-          go build -v -o ./bin/sso ./cmd/sso
+          echo "Building Go project..."
+          go build -v -o ./bin/sso .
           echo "Build successful"
+          ls -lh ./bin/
 
   # ==========================================
   # INTEGRATION TESTS - для PR в test и main
