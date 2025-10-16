@@ -12,7 +12,58 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==========================================
+  # Автоматическая синхронизация веток после релиза
+  # ==========================================
+  sync-branches:
+    name: Sync branches with main
+    runs-on: ubuntu-latest
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync test branch
+        run: |
+          echo "Syncing test branch with main..."
+          git fetch origin test
+          git checkout test
+          git merge origin/main --no-edit -m "chore: sync test with main after release ${{ needs.release-please.outputs.tag_name }}"
+          git push origin test
+          echo "test branch synchronized"
+
+      - name: Sync dev branch
+        run: |
+          echo "Syncing dev branch with main..."
+          git fetch origin dev
+          git checkout dev
+          git merge origin/main --no-edit -m "chore: sync dev with main after release ${{ needs.release-please.outputs.tag_name }}"
+          git push origin dev
+          echo "dev branch synchronized"
+
+      - name: Summary
+        run: |
+          echo "========================================="
+          echo "Branches synchronized successfully!"
+          echo "Release: ${{ needs.release-please.outputs.tag_name }}"
+          echo "main -> test -> dev"
+          echo "========================================="
