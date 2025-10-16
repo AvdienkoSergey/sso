@@ -202,7 +202,7 @@ commit: pre-commit
 	esac; \
 	echo ""; \
 	echo "$(YELLOW)Введите описание коммита:$(NC)"; \
-	read -p "> " message; \
+	read -r message; \
 	if [ -z "$$message" ]; then \
 		echo "$(RED)Ошибка: описание не может быть пустым$(NC)"; \
 		exit 1; \
@@ -210,8 +210,9 @@ commit: pre-commit
 	echo ""; \
 	echo "$(BLUE)Добавление файлов...$(NC)"; \
 	git add .; \
-	echo "$(BLUE)Создание коммита: $$type: $$message$(NC)"; \
-	git commit -m "$$type: $$message"; \
+	commit_msg="$$type: $$message"; \
+	echo "$(BLUE)Создание коммита: $$commit_msg$(NC)"; \
+	printf "%s\n" "$$commit_msg" | git commit -F -; \
 	echo "$(GREEN)Коммит создан успешно!$(NC)"; \
 	echo ""; \
 	echo "$(YELLOW)Для push используйте: make push-current$(NC)"
