@@ -130,7 +130,6 @@ jobs:
       github.event_name == 'pull_request' &&
       !contains(github.head_ref, 'release-please--') &&
       (
-        github.base_ref == 'dev' ||
         github.base_ref == 'test' ||
         github.base_ref == 'main'
       )
