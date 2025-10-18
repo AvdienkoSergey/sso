@@ -254,7 +254,10 @@ tasks:
         read -r message
         
         if [ -z "$message" ]; then
-          echo "Error: description cannot be empty"
+          echo ""
+          echo "==============================================================="
+          echo "Fail. Description cannot be empty"
+          echo "==============================================================="
           exit 1
         fi
         
@@ -265,9 +268,10 @@ tasks:
         commit_msg="$type: $message"
         echo "Creating commit: $commit_msg"
         printf "%s\n" "$commit_msg" | git commit -F -
-        echo "Commit created successfully!"
         echo ""
-        echo "For push use: task push-current"
+        echo "==============================================================="
+        echo "Commit created successfully!"
+        echo "==============================================================="
     interactive: true
     silent: true
 
@@ -281,14 +285,21 @@ tasks:
           echo "WARNING: You're trying to push to protected branch {{.CURRENT_BRANCH}}!"
           read -p "Continue? (yes/no): " confirm
           if [ "$confirm" != "yes" ]; then
-            echo "Push cancelled"
+            echo ""
+            echo "==============================================================="
+            echo "Fail. Push cancelled"
+            echo "==============================================================="
             exit 1
           fi
         fi
         
         git push origin {{.CURRENT_BRANCH}}
+        echo ""
+        echo "==============================================================="
         echo "Push completed successfully!"
+        echo "==============================================================="
     interactive: true
+    silent: true
 
   quick-commit:
     desc: Full workflow (pre-commit + add + commit + push)
@@ -319,8 +330,12 @@ tasks:
         fi
         
         git checkout -b feature/$name
+        echo ""
+        echo "==============================================================="
         echo "Created branch: feature/$name"
+        echo "==============================================================="
     interactive: true
+    silent: true
 
   branch-fix:
     desc: Create fix/* branch
@@ -335,8 +350,12 @@ tasks:
         fi
         
         git checkout -b fix/$name
+        echo ""
+        echo "==============================================================="
         echo "Created branch: fix/$name"
+        echo "==============================================================="
     interactive: true
+    silent: true
 
   branch-hotfix:
     desc: Create hotfix/* branch
@@ -351,8 +370,12 @@ tasks:
         fi
         
         git checkout -b hotfix/$name
+        echo ""
+        echo "==============================================================="
         echo "Created branch: hotfix/$name"
+        echo "==============================================================="
     interactive: true
+    silent: true
 
   branch-chore:
     desc: Create chore/* branch
@@ -367,15 +390,21 @@ tasks:
         fi
         
         git checkout -b chore/$name
+        echo ""
+        echo "==============================================================="
         echo "Created branch: chore/$name"
+        echo "==============================================================="
     interactive: true
+    silent: true
 
   help-branch:
     desc: Show branch naming rules
     cmds:
       - |
         echo ""
-        echo "Branch naming rules:"
+        echo "==============================================================="
+        echo "Branch naming rules"
+        echo "==============================================================="
         echo ""
         echo "feature/*   - New functionality"
         echo "              Example: feature/add-user-auth"
@@ -426,6 +455,7 @@ tasks:
           start "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/pulls" || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/pulls"
           {{end}}
         fi
+    silent: true
 
   release-view:
     desc: Open Releases in browser
