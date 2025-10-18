@@ -1,0 +1,488 @@
+version: '3'
+
+vars:
+  GOLANGCI_LINT_VERSION: v1.64.0
+  MOCKGEN_VERSION: latest
+  GITHUB_USER:
+    sh: git remote get-url origin | sed -n 's/.*github.com[:/]\(.*\)\/.*\.git/\1/p' || echo ""
+  GITHUB_REPO:
+    sh: git remote get-url origin | sed -n 's/.*github.com[:/].*\/\(.*\)\.git/\1/p' || echo ""
+  CURRENT_BRANCH:
+    sh: git rev-parse --abbrev-ref HEAD
+
+tasks:
+  default:
+    desc: Show available commands
+    cmds:
+      - task --list-all
+    silent: true
+
+  help:
+    desc: Show detailed help with examples
+    cmds:
+      - |
+        echo "=========================================="
+        echo "Available commands:"
+        echo ""
+        echo "Current branch: {{.CURRENT_BRANCH}}"
+        echo "Current system: {{OS}}"
+        echo "=========================================="
+        echo ""
+        echo "Environment check:"
+        echo "  task check-deps     - Check all dependencies"
+        echo "  task install-tools  - Install tools"
+        echo ""
+        echo "Development:"
+        echo "  task fmt            - Format code"
+        echo "  task lint           - Run linter"
+        echo "  task vet            - Static analysis"
+        echo "  task build          - Build project"
+        echo "  task test           - Run tests"
+        echo "  task pre-commit     - All checks before commit"
+        echo ""
+        echo "Working with commits:"
+        echo "  task commit         - Commit with checks (pre-commit + add + commit)"
+        echo "  task quick-commit   - Full workflow (pre-commit + add + commit + push)"
+        echo "  task push-current   - Push current branch to origin"
+        echo ""
+        echo "Creating branches:"
+        echo "  task branch-feature - Create feature/* branch"
+        echo "  task branch-fix     - Create fix/* branch"
+        echo "  task branch-hotfix  - Create hotfix/* branch"
+        echo "  task branch-chore   - Create chore/* branch"
+        echo "  task help-branch    - Show branch naming rules"
+        echo ""
+        echo "Working with repository in browser:"
+        echo "  task pr-view        - Open Pull Requests in browser"
+        echo "  task release-view   - Open Releases in browser"
+        echo "  task repo-view      - Open repository in browser"
+        echo "  task actions-view   - Open GitHub Actions in browser"
+        echo ""
+    silent: true
+
+  # ==========================================
+  # Install development tools
+  # ==========================================
+  install-tools:
+    desc: Install development tools (golangci-lint, mockgen)
+    cmds:
+      - |
+        echo "Installing development tools..."
+        echo ""
+        echo "1. golangci-lint (linter)"
+        if ! command -v golangci-lint &> /dev/null; then
+          echo "Installing golangci-lint via go install..."
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
+        else
+          echo "golangci-lint already installed"
+        fi
+        echo ""
+        echo "2. mockgen (mocks for tests)"
+        go install go.uber.org/mock/mockgen@{{.MOCKGEN_VERSION}}
+        echo ""
+        echo "==================================================================="
+        echo "All tools installed! Make sure $(go env GOPATH)/bin is in your PATH"
+        echo "==================================================================="
+    silent: true
+
+  # ==========================================
+  # Check all dependencies
+  # ==========================================
+  check-deps:
+    desc: Check all dependencies (Go, Task, GitHub CLI)
+    cmds:
+      - |
+        echo ""
+        echo "Checking Go..."
+        if command -v go &> /dev/null; then
+          echo "SUCCESS. Go installed: $(go version)"
+        else
+          echo ""
+          echo "==============================================================="
+          echo "Your environment is not ready to use. Please read the README.md"
+          echo "==============================================================="
+          exit 1
+        fi
+        
+        echo ""
+        echo "Checking Task..."
+        if command -v task &> /dev/null; then
+          echo "SUCCESS. Task installed: $(task --version)"
+        else
+          echo ""
+          echo "==============================================================="
+          echo "Your environment is not ready to use. Please read the README.md"
+          echo "==============================================================="
+          exit 1
+        fi
+        
+        echo ""
+        echo "Optional: GitHub CLI"
+        if command -v gh &> /dev/null; then
+          echo "SUCCESS. gh installed: $(gh --version | head -n 1)"
+        else
+          echo ""
+          echo "==============================================================="
+          echo "Your environment is not ready to use. Please read the README.md"
+          echo "==============================================================="
+          exit 1
+        fi
+        
+        echo ""
+        echo "==============================================================="
+        echo "All dependencies passed! You can work."
+        echo "==============================================================="
+    silent: true
+
+  # ==========================================
+  # Development tasks
+  # ==========================================
+  fmt:
+    desc: Format code
+    cmds:
+      - |
+        echo "Formatting code..."
+        go fmt ./...
+        gofmt -s -w .
+        echo "Formatting completed"
+    silent: true
+
+  lint:
+    desc: Run linter
+    cmds:
+      - |
+        echo "Running linter..."
+        if command -v golangci-lint &> /dev/null; then
+          golangci-lint run ./...
+          echo "Linter completed"
+        else
+          echo "golangci-lint not installed!"
+          echo "Run: task install-tools"
+          exit 1
+        fi
+    silent: true
+
+  vet:
+    desc: Static analysis (go vet)
+    cmds:
+      - |
+        echo "Static analysis (go vet)..."
+        go vet ./...
+        echo "Analysis completed"
+    silent: true
+
+  test:
+    desc: Run tests
+    cmds:
+      - |
+        echo "Running tests..."
+        {{if eq OS "windows"}}
+        # На Windows -race требует CGO, поэтому запускаем без него
+        go test -v -coverprofile=coverage.out ./...
+        {{else}}
+        # На Unix системах используем -race
+        go test -v -race -coverprofile=coverage.out ./...
+        {{end}}
+        echo "Tests completed"
+    silent: true
+
+  build:
+    desc: Build project
+    cmds:
+      - |
+        echo "Building project..."
+        go build -v ./...
+        echo "Build completed"
+    silent: true
+
+  pre-commit:
+    desc: All checks before commit
+    deps:
+      - fmt
+      - vet
+      - lint
+      - test
+    cmds:
+      - |
+        echo ""
+        echo "==============================================================="
+        echo "All checks passed! You can commit."
+        echo "==============================================================="
+    silent: true
+
+  # ==========================================
+  # Working with commits
+  # ==========================================
+  commit:
+    desc: Create commit with checks (interactive)
+    deps:
+      - pre-commit
+    cmds:
+      - |
+        echo ""
+        echo "Creating commit"
+        echo ""
+        echo "Choose commit type:"
+        echo "  1) feat     - New feature"
+        echo "  2) fix      - Bug fix"
+        echo "  3) docs     - Documentation changes"
+        echo "  4) style    - Formatting, indentation (doesn't affect code)"
+        echo "  5) refactor - Code refactoring"
+        echo "  6) chore    - Updating dependencies, configs"
+        echo "  7) ci       - CI/CD changes"
+        echo "  8) perf     - Performance improvements"
+        echo ""
+        read -p "Enter number (1-8): " type_num
+        
+        # Trim whitespace from input
+        type_num=$(echo "$type_num" | tr -d '[:space:]')
+        
+        case "$type_num" in
+          1) type="feat";;
+          2) type="fix";;
+          3) type="docs";;
+          4) type="style";;
+          5) type="refactor";;
+          6) type="chore";;
+          7) type="ci";;
+          8) type="perf";;
+          *) echo "Invalid choice! You entered: '$type_num'"; exit 1;;
+        esac
+        
+        echo ""
+        echo "Enter commit description:"
+        read -r message
+        
+        if [ -z "$message" ]; then
+          echo "Error: description cannot be empty"
+          exit 1
+        fi
+        
+        echo ""
+        echo "Adding files..."
+        git add .
+        
+        commit_msg="$type: $message"
+        echo "Creating commit: $commit_msg"
+        printf "%s\n" "$commit_msg" | git commit -F -
+        echo "Commit created successfully!"
+        echo ""
+        echo "For push use: task push-current"
+    interactive: true
+    silent: true
+
+  push-current:
+    desc: Push current branch to origin
+    cmds:
+      - |
+        echo "Push to origin/{{.CURRENT_BRANCH}}"
+        
+        if [ "{{.CURRENT_BRANCH}}" = "main" ] || [ "{{.CURRENT_BRANCH}}" = "test" ] || [ "{{.CURRENT_BRANCH}}" = "dev" ]; then
+          echo "WARNING: You're trying to push to protected branch {{.CURRENT_BRANCH}}!"
+          read -p "Continue? (yes/no): " confirm
+          if [ "$confirm" != "yes" ]; then
+            echo "Push cancelled"
+            exit 1
+          fi
+        fi
+        
+        git push origin {{.CURRENT_BRANCH}}
+        echo "Push completed successfully!"
+    interactive: true
+
+  quick-commit:
+    desc: Full workflow (pre-commit + add + commit + push)
+    cmds:
+      - task: commit
+      - task: push-current
+      - |
+        echo ""
+        echo "==============================================================="
+        echo "Full commit workflow completed successfully!"
+        echo "Changes pushed to origin/{{.CURRENT_BRANCH}}"
+        echo "==============================================================="
+    silent: true
+
+  # ==========================================
+  # Working with branches
+  # ==========================================
+  branch-feature:
+    desc: Create feature/* branch
+    cmds:
+      - |
+        echo "Creating feature branch"
+        read -p "Feature name (e.g., 'add-oauth'): " name
+        
+        if [ -z "$name" ]; then
+          echo "Error: branch name cannot be empty"
+          exit 1
+        fi
+        
+        git checkout -b feature/$name
+        echo "Created branch: feature/$name"
+    interactive: true
+
+  branch-fix:
+    desc: Create fix/* branch
+    cmds:
+      - |
+        echo "Creating fix branch"
+        read -p "Fix name (e.g., 'login-error'): " name
+        
+        if [ -z "$name" ]; then
+          echo "Error: branch name cannot be empty"
+          exit 1
+        fi
+        
+        git checkout -b fix/$name
+        echo "Created branch: fix/$name"
+    interactive: true
+
+  branch-hotfix:
+    desc: Create hotfix/* branch
+    cmds:
+      - |
+        echo "Creating hotfix branch"
+        read -p "Hotfix name (e.g., 'security-patch'): " name
+        
+        if [ -z "$name" ]; then
+          echo "Error: branch name cannot be empty"
+          exit 1
+        fi
+        
+        git checkout -b hotfix/$name
+        echo "Created branch: hotfix/$name"
+    interactive: true
+
+  branch-chore:
+    desc: Create chore/* branch
+    cmds:
+      - |
+        echo "Creating chore branch"
+        read -p "Chore name (e.g., 'update-deps'): " name
+        
+        if [ -z "$name" ]; then
+          echo "Error: branch name cannot be empty"
+          exit 1
+        fi
+        
+        git checkout -b chore/$name
+        echo "Created branch: chore/$name"
+    interactive: true
+
+  help-branch:
+    desc: Show branch naming rules
+    cmds:
+      - |
+        echo ""
+        echo "Branch naming rules:"
+        echo ""
+        echo "feature/*   - New functionality"
+        echo "              Example: feature/add-user-auth"
+        echo "              Command: task branch-feature"
+        echo ""
+        echo "fix/*       - Bug fixes"
+        echo "              Example: fix/login-bug"
+        echo "              Command: task branch-fix"
+        echo ""
+        echo "hotfix/*    - Urgent fixes for production"
+        echo "              Example: hotfix/critical-security-patch"
+        echo "              Command: task branch-hotfix"
+        echo ""
+        echo "chore/*     - Technical tasks (deps, configs, etc.)"
+        echo "              Example: chore/update-dependencies"
+        echo "              Command: task branch-chore"
+        echo ""
+        echo "Workflow:"
+        echo "  feature/fix/hotfix/chore/* -> dev -> test -> main"
+        echo ""
+        echo "Usage examples:"
+        echo "  $ task branch-feature"
+        echo "  > Feature name: add-oauth"
+        echo "  > Created branch: feature/add-oauth"
+        echo ""
+        echo "  $ task branch-fix"
+        echo "  > Fix name: login-error"
+        echo "  > Created branch: fix/login-error"
+        echo ""
+    silent: true
+
+  # ==========================================
+  # Working with repository in browser
+  # ==========================================
+  pr-view:
+    desc: Open Pull Requests in browser
+    cmds:
+      - |
+        if command -v gh &> /dev/null; then
+          gh pr view --web 2>/dev/null || gh pr list --web
+        else
+          echo "Opening Pull Requests in browser..."
+          {{if eq OS "darwin"}}
+          open "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/pulls" 2>/dev/null || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/pulls"
+          {{else if eq OS "linux"}}
+          xdg-open "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/pulls" 2>/dev/null || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/pulls"
+          {{else if eq OS "windows"}}
+          start "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/pulls" || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/pulls"
+          {{end}}
+        fi
+
+  release-view:
+    desc: Open Releases in browser
+    cmds:
+      - |
+        if command -v gh &> /dev/null; then
+          gh release view --web 2>/dev/null || gh release list --web
+        else
+          echo "Opening Releases in browser..."
+          {{if eq OS "darwin"}}
+          open "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/releases" 2>/dev/null || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/releases"
+          {{else if eq OS "linux"}}
+          xdg-open "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/releases" 2>/dev/null || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/releases"
+          {{else if eq OS "windows"}}
+          start "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/releases" || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/releases"
+          {{end}}
+        fi
+
+  repo-view:
+    desc: Open repository in browser
+    cmds:
+      - |
+        if command -v gh &> /dev/null; then
+          gh repo view --web
+        else
+          echo "Opening repository in browser..."
+          {{if eq OS "darwin"}}
+          open "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}" 2>/dev/null || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}"
+          {{else if eq OS "linux"}}
+          xdg-open "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}" 2>/dev/null || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}"
+          {{else if eq OS "windows"}}
+          start "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}" || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}"
+          {{end}}
+        fi
+
+  actions-view:
+    desc: Open GitHub Actions in browser
+    cmds:
+      - |
+        if command -v gh &> /dev/null; then
+          gh workflow view release-please.yml --web 2>/dev/null || {
+            echo "Opening Actions in browser via URL..."
+            {{if eq OS "darwin"}}
+            open "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions" 2>/dev/null || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions"
+            {{else if eq OS "linux"}}
+            xdg-open "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions" 2>/dev/null || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions"
+            {{else if eq OS "windows"}}
+            start "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions" || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions"
+            {{end}}
+          }
+        else
+          echo "Opening Actions in browser..."
+          {{if eq OS "darwin"}}
+          open "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions" 2>/dev/null || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions"
+          {{else if eq OS "linux"}}
+          xdg-open "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions" 2>/dev/null || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions"
+          {{else if eq OS "windows"}}
+          start "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions" || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}/actions"
+          {{end}}
+        fi
