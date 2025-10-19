@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.3](https://github.com/AvdienkoSergey/sso/compare/sso-v1.0.2...sso-v1.0.3) (2025-10-19)
+
+
+### Documentation
+
+* added documentation with details for Windows ([40fb6c1](https://github.com/AvdienkoSergey/sso/commit/40fb6c1a1bd0e0612d5a2fd1ce9551e738e76115))
+
+
+### Miscellaneous Chores
+
+* added docker compose file with MongoDB settings ([867daf1](https://github.com/AvdienkoSergey/sso/commit/867daf1f9aab05fafbc1b3f55133cbb68caa093b))
+* added text cleaning from special characters for Git Bash when called branch commands ([0e8f685](https://github.com/AvdienkoSergey/sso/commit/0e8f6853723133684af12ff330cab78a4fc900dd))
+* all commands have been checked. Quiet output is configured ([1e0a20c](https://github.com/AvdienkoSergey/sso/commit/1e0a20c7a284306ec73a36b55b1ed1678c7d65c4))
+* changed Makefile to Taskfile. Configured a cross-platform script ([ed926d0](https://github.com/AvdienkoSergey/sso/commit/ed926d03669697bb230edb238f6be6f853caaf92))
+* фвÐadded folder in .gitignore ([ba9f87f](https://github.com/AvdienkoSergey/sso/commit/ba9f87f1c41e1bdadd6d8467a4d967f34beada4e))
+
 ## [1.0.2](https://github.com/AvdienkoSergey/sso/compare/sso-v1.0.1...sso-v1.0.2) (2025-10-16)
 
 
