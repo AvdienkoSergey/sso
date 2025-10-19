@@ -324,6 +324,9 @@ tasks:
         echo "Creating feature branch"
         read -p "Feature name (e.g., 'add-oauth'): " name
         
+        # Trim whitespace from input
+        name=$(echo "$name" | tr -d '[:space:]')
+        
         if [ -z "$name" ]; then
           echo "Error: branch name cannot be empty"
           exit 1
@@ -343,6 +346,9 @@ tasks:
       - |
         echo "Creating fix branch"
         read -p "Fix name (e.g., 'login-error'): " name
+        
+        # Trim whitespace from input
+        name=$(echo "$name" | tr -d '[:space:]')
         
         if [ -z "$name" ]; then
           echo "Error: branch name cannot be empty"
@@ -364,6 +370,9 @@ tasks:
         echo "Creating hotfix branch"
         read -p "Hotfix name (e.g., 'security-patch'): " name
         
+        # Trim whitespace from input
+        name=$(echo "$name" | tr -d '[:space:]')
+        
         if [ -z "$name" ]; then
           echo "Error: branch name cannot be empty"
           exit 1
@@ -383,6 +392,9 @@ tasks:
       - |
         echo "Creating chore branch"
         read -p "Chore name (e.g., 'update-deps'): " name
+        
+        # Trim whitespace from input
+        name=$(echo "$name" | tr -d '[:space:]')
         
         if [ -z "$name" ]; then
           echo "Error: branch name cannot be empty"
@@ -474,6 +486,7 @@ tasks:
           {{end}}
         fi
 
+
   repo-view:
     desc: Open repository in browser
     cmds:
@@ -490,6 +503,7 @@ tasks:
           start "https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}" || echo "Go to: https://github.com/{{.GITHUB_USER}}/{{.GITHUB_REPO}}"
           {{end}}
         fi
+
 
   actions-view:
     desc: Open GitHub Actions in browser
